@@ -1,11 +1,10 @@
 import json
 import os
 import streamlit as st
-import google.generativeai as genai
+from google import genai
 import plotly.graph_objects as go
 from dotenv import load_dotenv
 
-load_dotenv()
 
 # 1. CONFIGURATION & AI INITIALIZATION
 
@@ -15,10 +14,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# Get API key from .env
-api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+# initialize Gemini Client with caching to avoid re-initialization on every rerun
+@st.cache_resource
+def get_gemini_client(api_key):
+    return genai.Client(api_key=api_key)
 
 ai_configured = False
+client = None
 
 # Sidebar
 st.sidebar.header("Configuration")
@@ -27,9 +29,10 @@ st.sidebar.info("Get your API key at https://aistudio.google.com/app/apikey")
 
 if api_key:
     try:
-        genai.configure(api_key=api_key)
+        client = genai.Client(api_key=api_key)
         ai_configured = True
         st.sidebar.success("Gemini API configured successfully.")
+
     except Exception as e:
         st.sidebar.error("Failed to configure Gemini API.")
         st.sidebar.error(f"Configuration error: {e}")
@@ -37,8 +40,7 @@ if api_key:
 # Prevent AI calls when configuration failed
 if not ai_configured:
     st.warning(
-        "Gemini API is not configured. "
-        "Please check your .env file."
+        "AI is not configured. Please provide a valid Gemini API key in the sidebar to enable AI-powered features."
     )
 
 # Standard Scientific Emission Baselines (Global / India Averages)
@@ -53,8 +55,7 @@ EMISSION_FACTORS = {
 
 def parse_log_with_ai(user_text_input):
     """Uses Gemini to parse unstructured user logs into a strict JSON scheme."""
-    model = genai.GenerativeModel("gemini-2.5-flash")
-
+    
     prompt = f"""
     You are an environmental data processor. Analyze the user's daily activities text and extract metrics related to energy consumption and transport.
     
@@ -70,11 +71,16 @@ def parse_log_with_ai(user_text_input):
     """
     
     try:
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model = 'gemini-3.8-flash',
+            contents = prompt
+            )
+
         # Clean potential markdown wrapping if the model accidentally includes it
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
         data = json.loads(clean_text)
         return data
+
     except Exception as e:
         st.error(f"Failed to parse AI response. Error: {e}")
         return None
